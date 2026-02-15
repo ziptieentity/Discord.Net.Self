@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -16,10 +15,15 @@ namespace Discord.Interactions.Builders
 
         public static async Task<IEnumerable<TypeInfo>> SearchAsync(Assembly assembly, InteractionService commandService)
         {
-            static bool IsLoadableModule(TypeInfo info)
-            {
-                return info.DeclaredMethods.Any(x => x.GetCustomAttribute<SlashCommandAttribute>() != null);
-            }
+            static bool IsLoadableModule(TypeInfo info) =>
+                !info.IsAbstract &&
+                info.DeclaredMethods
+                    .SelectMany(x => x.GetCustomAttributes())
+                    .Any(x => x is SlashCommandAttribute
+                                or ComponentInteractionAttribute
+                                or ContextCommandAttribute
+                                or AutocompleteCommandAttribute
+                                or ModalInteractionAttribute);
 
             var result = new List<TypeInfo>();
 
@@ -58,7 +62,7 @@ namespace Discord.Interactions.Builders
                 result.Add(type.AsType(), moduleInfo);
             }
 
-            await commandService._cmdLogger.DebugAsync($"Successfully built {built.Count} Slash Command modules.").ConfigureAwait(false);
+            await commandService._cmdLogger.DebugAsync($"Successfully built {built.Count} interaction modules.").ConfigureAwait(false);
 
             return result;
         }
@@ -90,7 +94,7 @@ namespace Discord.Interactions.Builders
 #pragma warning restore CS0618 // Type or member is obsolete
 #pragma warning disable CS0618 // Type or member is obsolete
                     case EnabledInDmAttribute enabledInDm:
-                    {
+                        {
                             builder.IsEnabledInDm = enabledInDm.IsEnabled;
                         }
                         break;
@@ -127,7 +131,7 @@ namespace Discord.Interactions.Builders
             var validContextCommands = methods.Where(IsValidContextCommandDefinition);
             var validInteractions = methods.Where(IsValidComponentCommandDefinition);
             var validAutocompleteCommands = methods.Where(IsValidAutocompleteCommandDefinition);
-            var validModalCommands = methods.Where(IsValidModalCommanDefinition);
+            var validModalCommands = methods.Where(IsValidModalCommandDefinition);
 
             Func<IServiceProvider, IInteractionModuleBase> createInstance = commandService._useCompiledLambda ?
                 ReflectionUtils<IInteractionModuleBase>.CreateLambdaBuilder(typeInfo, commandService) : ReflectionUtils<IInteractionModuleBase>.CreateBuilder(typeInfo, commandService);
@@ -466,6 +470,10 @@ namespace Discord.Interactions.Builders
             builder.IsRequired = !paramInfo.IsOptional;
             builder.DefaultValue = paramInfo.DefaultValue;
 
+            var supportedNumericalRange = paramInfo.GetSupportedNumericalRange();
+            builder.MinValue = supportedNumericalRange.Min;
+            builder.MaxValue = supportedNumericalRange.Max;
+
             foreach (var attribute in attributes)
             {
                 switch (attribute)
@@ -497,9 +505,15 @@ namespace Discord.Interactions.Builders
                             builder.WithAutocompleteHandler(autocomplete.AutocompleteHandlerType, services);
                         break;
                     case MaxValueAttribute maxValue:
+                        if (maxValue.Value > supportedNumericalRange.Max)
+                            throw new ArgumentOutOfRangeException($"{nameof(maxValue)} cannot be greater than {supportedNumericalRange.Max}.");
+
                         builder.MaxValue = maxValue.Value;
                         break;
                     case MinValueAttribute minValue:
+                        if (minValue.Value < supportedNumericalRange.Min)
+                            throw new ArgumentOutOfRangeException($"{nameof(minValue)} cannot be less than {supportedNumericalRange.Min}.");
+
                         builder.MinValue = minValue.Value;
                         break;
                     case MinLengthAttribute minLength:
@@ -589,16 +603,37 @@ namespace Discord.Interactions.Builders
                     Title = instance.Title
                 };
 
-                var inputs = modalType.GetProperties().Where(IsValidModalInputDefinition);
+                var components = modalType.GetProperties().Where(IsValidModalComponentDefinition);
 
-                foreach (var prop in inputs)
+                foreach (var prop in components)
                 {
-                    var componentType = prop.GetCustomAttribute<ModalInputAttribute>()?.ComponentType;
+                    var componentType = prop.GetCustomAttribute<ModalComponentAttribute>()?.ComponentType;
 
                     switch (componentType)
                     {
                         case ComponentType.TextInput:
-                            builder.AddTextComponent(x => BuildTextInput(x, prop, prop.GetValue(instance)));
+                            builder.AddTextInputComponent(x => BuildTextInputComponent(x, prop, prop.GetValue(instance)));
+                            break;
+                        case ComponentType.SelectMenu:
+                            builder.AddSelectMenuInputComponent(x => BuildSelectMenuComponent(x, prop, prop.GetValue(instance)));
+                            break;
+                        case ComponentType.UserSelect:
+                            builder.AddUserSelectInputComponent(x => BuildSnowflakeSelectComponent(x, prop, prop.GetValue(instance)));
+                            break;
+                        case ComponentType.RoleSelect:
+                            builder.AddRoleSelectInputComponent(x => BuildSnowflakeSelectComponent(x, prop, prop.GetValue(instance)));
+                            break;
+                        case ComponentType.MentionableSelect:
+                            builder.AddMentionableSelectInputComponent(x => BuildSnowflakeSelectComponent(x, prop, prop.GetValue(instance)));
+                            break;
+                        case ComponentType.ChannelSelect:
+                            builder.AddChannelSelectInputComponent(x => BuildSnowflakeSelectComponent(x, prop, prop.GetValue(instance)));
+                            break;
+                        case ComponentType.FileUpload:
+                            builder.AddFileUploadInputComponent(x => BuildFileUploadComponent(x, prop, prop.GetValue(instance)));
+                            break;
+                        case ComponentType.TextDisplay:
+                            builder.AddTextDisplayComponent(x => BuildTextDisplayComponent(x, prop, prop.GetValue(instance)));
                             break;
                         case null:
                             throw new InvalidOperationException($"{prop.Name} of {prop.DeclaringType.Name} isn't a valid modal input field.");
@@ -617,8 +652,10 @@ namespace Discord.Interactions.Builders
             }
         }
 
-        private static void BuildTextInput(TextInputComponentBuilder builder, PropertyInfo propertyInfo, object defaultValue)
+        private static void BuildTextInputComponent(TextInputComponentBuilder builder, PropertyInfo propertyInfo, object defaultValue)
         {
+            EnsurePubliclySettable(propertyInfo);
+
             var attributes = propertyInfo.GetCustomAttributes();
 
             builder.Label = propertyInfo.Name;
@@ -638,12 +675,169 @@ namespace Discord.Interactions.Builders
                         builder.MaxLength = textInput.MaxLength;
                         builder.MinLength = textInput.MinLength;
                         builder.InitialValue = textInput.InitialValue;
+                        builder.Id = textInput.Id;
                         break;
                     case RequiredInputAttribute requiredInput:
                         builder.IsRequired = requiredInput.IsRequired;
                         break;
                     case InputLabelAttribute inputLabel:
                         builder.Label = inputLabel.Label;
+                        builder.Description = inputLabel.Description;
+                        break;
+                    default:
+                        builder.WithAttributes(attribute);
+                        break;
+                }
+            }
+        }
+
+        private static void BuildSelectMenuComponent(SelectMenuComponentBuilder builder, PropertyInfo propertyInfo, object defaultValue)
+        {
+            EnsurePubliclySettable(propertyInfo);
+
+            var attributes = propertyInfo.GetCustomAttributes();
+
+            builder.Label = propertyInfo.Name;
+            builder.DefaultValue = defaultValue;
+            builder.WithType(propertyInfo.PropertyType);
+            builder.PropertyInfo = propertyInfo;
+
+            foreach (var attribute in attributes)
+            {
+                switch (attribute)
+                {
+                    case ModalSelectMenuAttribute selectMenuInput:
+                        builder.CustomId = selectMenuInput.CustomId;
+                        builder.ComponentType = selectMenuInput.ComponentType;
+                        builder.MinValues = selectMenuInput.MinValues;
+                        builder.MaxValues = selectMenuInput.MaxValues;
+                        builder.Placeholder = selectMenuInput.Placeholder;
+                        builder.Id = selectMenuInput.Id;
+                        break;
+                    case RequiredInputAttribute requiredInput:
+                        builder.IsRequired = requiredInput.IsRequired;
+                        break;
+                    case InputLabelAttribute inputLabel:
+                        builder.Label = inputLabel.Label;
+                        builder.Description = inputLabel.Description;
+                        break;
+                    case ModalSelectMenuOptionAttribute selectMenuOption:
+                        Emoji emoji = null;
+                        Emote emote = null;
+
+                        if (!string.IsNullOrEmpty(selectMenuOption?.Emote) && !(Emote.TryParse(selectMenuOption.Emote, out emote) || Emoji.TryParse(selectMenuOption.Emote, out emoji)))
+                            throw new ArgumentException($"Unable to parse {selectMenuOption.Emote} of {propertyInfo.DeclaringType}.{propertyInfo.Name} into an {typeof(Emote).Name} or an {typeof(Emoji).Name}");
+
+                        builder.AddOption(new SelectMenuOptionBuilder
+                        {
+                            Label = selectMenuOption.Label,
+                            Description = selectMenuOption.Description,
+                            Value = selectMenuOption.Value,
+                            Emote = emote != null ? emote : emoji,
+                            IsDefault = selectMenuOption.IsDefault
+                        });
+                        break;
+                    default:
+                        builder.WithAttributes(attribute);
+                        break;
+                }
+            }
+        }
+
+        private static void BuildSnowflakeSelectComponent<TInfo, TBuilder>(SnowflakeSelectComponentBuilder<TInfo, TBuilder> builder, PropertyInfo propertyInfo, object defaultValue)
+            where TInfo : SnowflakeSelectComponentInfo
+            where TBuilder : SnowflakeSelectComponentBuilder<TInfo, TBuilder>
+        {
+            EnsurePubliclySettable(propertyInfo);
+
+            var attributes = propertyInfo.GetCustomAttributes();
+
+            builder.Label = propertyInfo.Name;
+            builder.DefaultValue = defaultValue;
+            builder.WithType(propertyInfo.PropertyType);
+            builder.PropertyInfo = propertyInfo;
+
+            foreach (var attribute in attributes)
+            {
+                switch (attribute)
+                {
+                    case ModalSelectComponentAttribute selectInput:
+                        builder.CustomId = selectInput.CustomId;
+                        builder.ComponentType = selectInput.ComponentType;
+                        builder.MinValues = selectInput.MinValues;
+                        builder.MaxValues = selectInput.MaxValues;
+                        builder.Placeholder = selectInput.Placeholder;
+                        builder.Id = selectInput.Id;
+                        break;
+                    case RequiredInputAttribute requiredInput:
+                        builder.IsRequired = requiredInput.IsRequired;
+                        break;
+                    case InputLabelAttribute inputLabel:
+                        builder.Label = inputLabel.Label;
+                        builder.Description = inputLabel.Description;
+                        break;
+                    case ChannelTypesAttribute channelTypes when builder is ChannelSelectComponentBuilder channelSelectBuilder:
+                        channelSelectBuilder.WithChannelTypes(channelTypes.ChannelTypes);
+                        break;
+                    default:
+                        builder.WithAttributes(attribute);
+                        break;
+                }
+            }
+        }
+
+        private static void BuildFileUploadComponent(FileUploadComponentBuilder builder, PropertyInfo propertyInfo, object defaultValue)
+        {
+            EnsurePubliclySettable(propertyInfo);
+
+            var attributes = propertyInfo.GetCustomAttributes();
+
+            builder.Label = propertyInfo.Name;
+            builder.DefaultValue = defaultValue;
+            builder.WithType(propertyInfo.PropertyType);
+            builder.PropertyInfo = propertyInfo;
+
+            foreach (var attribute in attributes)
+            {
+                switch (attribute)
+                {
+                    case ModalFileUploadAttribute fileUploadInput:
+                        builder.CustomId = fileUploadInput.CustomId;
+                        builder.ComponentType = fileUploadInput.ComponentType;
+                        builder.MinValues = fileUploadInput.MinValues;
+                        builder.MaxValues = fileUploadInput.MaxValues;
+                        builder.Id = fileUploadInput.Id;
+                        break;
+                    case RequiredInputAttribute requiredInput:
+                        builder.IsRequired = requiredInput.IsRequired;
+                        break;
+                    case InputLabelAttribute inputLabel:
+                        builder.Label = inputLabel.Label;
+                        builder.Description = inputLabel.Description;
+                        break;
+                    default:
+                        builder.WithAttributes(attribute);
+                        break;
+                }
+            }
+        }
+
+        private static void BuildTextDisplayComponent(TextDisplayComponentBuilder builder, PropertyInfo propertyInfo, object defaultValue)
+        {
+            var attributes = propertyInfo.GetCustomAttributes();
+
+            builder.DefaultValue = defaultValue;
+            builder.WithType(propertyInfo.PropertyType);
+            builder.PropertyInfo = propertyInfo;
+
+            foreach (var attribute in attributes)
+            {
+                switch (attribute)
+                {
+                    case ModalTextDisplayAttribute textDisplay:
+                        builder.ComponentType = textDisplay.ComponentType;
+                        builder.Content = textDisplay.Content;
+                        builder.Id = textDisplay.Id;
                         break;
                     default:
                         builder.WithAttributes(attribute);
@@ -693,7 +887,7 @@ namespace Discord.Interactions.Builders
                 methodInfo.GetParameters().Length == 0;
         }
 
-        private static bool IsValidModalCommanDefinition(MethodInfo methodInfo)
+        private static bool IsValidModalCommandDefinition(MethodInfo methodInfo)
         {
             return methodInfo.IsDefined(typeof(ModalInteractionAttribute)) &&
                 (methodInfo.ReturnType == typeof(Task) || methodInfo.ReturnType == typeof(Task<RuntimeResult>)) &&
@@ -702,11 +896,20 @@ namespace Discord.Interactions.Builders
                 typeof(IModal).IsAssignableFrom(methodInfo.GetParameters().Last().ParameterType);
         }
 
-        private static bool IsValidModalInputDefinition(PropertyInfo propertyInfo)
+        private static bool IsValidModalComponentDefinition(PropertyInfo propertyInfo)
         {
-            return propertyInfo.SetMethod?.IsPublic == true &&
-                propertyInfo.SetMethod?.IsStatic == false &&
-                propertyInfo.IsDefined(typeof(ModalInputAttribute));
+            return propertyInfo.IsDefined(typeof(ModalComponentAttribute));
+        }
+
+        private static bool IsPubliclySettable(PropertyInfo propertyInfo)
+        {
+            return propertyInfo.SetMethod is { IsPublic: true, IsStatic: false };
+        }
+
+        private static void EnsurePubliclySettable(PropertyInfo propertyInfo)
+        {
+            if(!IsPubliclySettable(propertyInfo))
+                throw new InvalidOperationException($"The property {propertyInfo.Name} must be publicly settable.");
         }
 
         private static ConstructorInfo GetComplexParameterConstructor(TypeInfo typeInfo, ComplexParameterAttribute complexParameter)

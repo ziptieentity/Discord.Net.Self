@@ -49,10 +49,13 @@ namespace Discord.WebSocket
         public IReadOnlyCollection<IActivity> Activities => Presence.Activities ?? ImmutableList<IActivity>.Empty;
 
         /// <inheritdoc />
-        public string AvatarDecorationHash { get; private set; }
+        public abstract string AvatarDecorationHash { get; internal set; }
 
         /// <inheritdoc />
-        public ulong? AvatarDecorationSkuId { get; private set; }
+        public abstract ulong? AvatarDecorationSkuId { get; internal set; }
+
+        /// <inheritdoc />
+        public abstract PrimaryGuild? PrimaryGuild { get; internal set; }
 
         /// <summary>
         ///     Gets mutual guilds shared with this user.
@@ -111,6 +114,32 @@ namespace Discord.WebSocket
                 AvatarDecorationHash = model.AvatarDecoration.Value?.Asset;
                 AvatarDecorationSkuId = model.AvatarDecoration.Value?.SkuId;
                 hasChanges = true;
+            }
+
+            if (model.PrimaryGuild.IsSpecified)
+            {
+                if (model.PrimaryGuild.Value is null)
+                {
+                    if (PrimaryGuild is not null)
+                        hasChanges = true;
+                    PrimaryGuild = null;
+                }
+                else
+                {
+                    if (PrimaryGuild?.GuildId != model.PrimaryGuild.Value.GuildId ||
+                        PrimaryGuild?.BadgeHash != model.PrimaryGuild.Value.BadgeHash ||
+                        PrimaryGuild?.Tag != model.PrimaryGuild.Value.Tag ||
+                        PrimaryGuild?.IdentityEnabled != model.PrimaryGuild.Value.IdentityEnabled)
+                    {
+                        PrimaryGuild = new(
+                            model.PrimaryGuild.Value.GuildId,
+                            model.PrimaryGuild.Value.IdentityEnabled,
+                            model.PrimaryGuild.Value.Tag,
+                            model.PrimaryGuild.Value.BadgeHash);
+
+                        hasChanges = true;
+                    }
+                }
             }
 
             return hasChanges;

@@ -1,7 +1,13 @@
 - name: Introduction
   topicUid: Guides.Introduction
-- name: V2 to V3 Guide
-  topicUid: Guides.V2V3Guide
+- name: Breakings
+  items:
+    - name: V2 to V3 Guide
+      topicUid: Guides.Breakings.V2V3Guide
+    - name: V3.18
+      topicUid: Guides.Breakings.V3_18
+    - name: V3.19
+      topicUid: Guides.Breakings.V3_19
 - name: Getting Started
   items:
     - name: Installation
@@ -102,6 +108,14 @@
       topicUid: Guides.MessageComponents.TextInputs
     - name: Advanced Concepts
       topicUid: Guides.MessageComponents.Advanced
+- name: Components V2
+  items:
+    - name: Introduction
+      topicUid: Guides.ComponentsV2.Intro
+    - name: Advanced
+      topicUid: Guides.ComponentsV2.Advanced
+    - name: Interacting with Components
+      topicUid: Guides.ComponentsV2.Interaction
 - name: Modal Basics
   items:
     - name: Introduction

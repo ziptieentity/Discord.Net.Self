@@ -8,7 +8,7 @@ namespace Discord;
 /// <summary>
 ///     Represents a class used to build <see cref="SelectMenuComponent"/>'s.
 /// </summary>
-public class SelectMenuBuilder
+public class SelectMenuBuilder : IInteractableComponentBuilder
 {
     /// <summary>
     ///     The max length of a <see cref="SelectMenuComponent.Placeholder"/>.
@@ -35,8 +35,12 @@ public class SelectMenuBuilder
         get => _customId;
         set
         {
-            Preconditions.AtLeast(value.Length, 1, nameof(CustomId));
-            Preconditions.AtMost(value.Length, ComponentBuilder.MaxCustomIdLength, nameof(CustomId));
+            if (value is not null)
+            {
+                Preconditions.AtLeast(value.Length, 1, nameof(CustomId));
+                Preconditions.AtMost(value.Length, ComponentBuilder.MaxCustomIdLength, nameof(CustomId));
+            }
+
             _customId = value;
         }
     }
@@ -63,8 +67,12 @@ public class SelectMenuBuilder
         get => _placeholder;
         set
         {
-            Preconditions.AtLeast(value.Length, 1, nameof(Placeholder));
-            Preconditions.AtMost(value.Length, MaxPlaceholderLength, nameof(Placeholder));
+            if (value is not null)
+            {
+                Preconditions.AtLeast(value.Length, 1, nameof(Placeholder));
+                Preconditions.AtMost(value.Length, MaxPlaceholderLength, nameof(Placeholder));
+            }
+
             _placeholder = value;
         }
     }
@@ -114,6 +122,11 @@ public class SelectMenuBuilder
     }
 
     /// <summary>
+    ///     Gets or sets whether the current menu is required to answer in a modal (defaults to <see langword="true"/>).
+    /// </summary>
+    public bool IsRequired { get ; set; } = true;
+
+    /// <summary>
     ///     Gets or sets whether the current menu is disabled.
     /// </summary>
     public bool IsDisabled { get; set; }
@@ -135,13 +148,16 @@ public class SelectMenuBuilder
         }
     }
 
-    private List<SelectMenuOptionBuilder> _options = new List<SelectMenuOptionBuilder>();
+    /// <inheritdoc/>
+    public int? Id { get; set; }
+
+    private List<SelectMenuOptionBuilder> _options = [];
     private int _minValues = 1;
     private int _maxValues = 1;
     private string _placeholder;
     private string _customId;
     private ComponentType _type = ComponentType.SelectMenu;
-    private List<SelectMenuDefaultValue> _defaultValues = new();
+    private List<SelectMenuDefaultValue> _defaultValues = [];
 
     /// <summary>
     ///     Creates a new instance of a <see cref="SelectMenuBuilder"/>.
@@ -157,11 +173,15 @@ public class SelectMenuBuilder
         CustomId = selectMenu.CustomId;
         MaxValues = selectMenu.MaxValues;
         MinValues = selectMenu.MinValues;
+        IsRequired = selectMenu.IsRequired;
         IsDisabled = selectMenu.IsDisabled;
+        Type = selectMenu.Type;
         Options = selectMenu.Options?
            .Select(x => new SelectMenuOptionBuilder(x.Label, x.Value, x.Description, x.Emote, x.IsDefault))
            .ToList();
+        ChannelTypes = selectMenu.ChannelTypes?.ToList();
         DefaultValues = selectMenu.DefaultValues?.ToList();
+        Id = selectMenu.Id;
     }
 
     /// <summary>
@@ -175,18 +195,23 @@ public class SelectMenuBuilder
     /// <param name="isDisabled">Disabled this select menu or not.</param>
     /// <param name="type">The <see cref="ComponentType"/> of this select menu.</param>
     /// <param name="channelTypes">The types of channels this menu can select (only valid on <see cref="ComponentType.ChannelSelect"/>s)</param>
-    public SelectMenuBuilder(string customId, List<SelectMenuOptionBuilder> options = null, string placeholder = null, int maxValues = 1, int minValues = 1,
-        bool isDisabled = false, ComponentType type = ComponentType.SelectMenu, List<ChannelType> channelTypes = null, List<SelectMenuDefaultValue> defaultValues = null)
+    /// <param name="defaultValues">The list of default values.</param>
+    /// <param name="id">An optional id for the component.</param>
+    /// <param name="isRequired">Whether the current menu is required to answer in a modal.</param>
+    public SelectMenuBuilder(string customId, List<SelectMenuOptionBuilder> options = null, string placeholder = null, int maxValues = 1, int minValues = 1, bool isDisabled = false,
+        ComponentType type = ComponentType.SelectMenu, List<ChannelType> channelTypes = null, List<SelectMenuDefaultValue> defaultValues = null, int? id = null, bool isRequired = true)
     {
         CustomId = customId;
         Options = options;
         Placeholder = placeholder;
+        IsRequired = isRequired;
         IsDisabled = isDisabled;
         MaxValues = maxValues;
         MinValues = minValues;
         Type = type;
         ChannelTypes = channelTypes ?? new();
         DefaultValues = defaultValues ?? new();
+        Id = id;
     }
 
     /// <summary>
@@ -339,6 +364,19 @@ public class SelectMenuBuilder
     }
 
     /// <summary>
+    ///     Sets whether the current menu is required to answer in a modal.
+    /// </summary>
+    /// <param name="isRequired">Whether the current menu is required to answer in a modal.</param>
+    /// <returns>
+    ///     The current builder.
+    /// </returns>
+    public SelectMenuBuilder WithRequired(bool isRequired)
+    {
+        IsRequired = isRequired;
+        return this;
+    }
+
+    /// <summary>
     ///     Sets whether the current menu is disabled.
     /// </summary>
     /// <param name="isDisabled">Whether the current menu is disabled or not.</param>
@@ -400,6 +438,9 @@ public class SelectMenuBuilder
     {
         var options = Options?.Select(x => x.Build()).ToList();
 
-        return new SelectMenuComponent(CustomId, options, Placeholder, MinValues, MaxValues, IsDisabled, Type, ChannelTypes, DefaultValues);
+        return new SelectMenuComponent(CustomId, options, Placeholder, MinValues, MaxValues, IsRequired, IsDisabled, Type, Id, ChannelTypes, DefaultValues);
     }
+
+    /// <inheritdoc/>
+    IMessageComponent IMessageComponentBuilder.Build() => Build();
 }

@@ -26,7 +26,7 @@ namespace Discord
         ///     An <see cref="int"/> representing the API version that Discord.Net uses to communicate with Discord's
         ///     voice server.
         /// </returns>
-        public const int VoiceAPIVersion = 3;
+        public const int VoiceAPIVersion = 8;
         /// <summary>
         ///     Gets the Discord.Net version, including the build number.
         /// </summary>
@@ -116,7 +116,7 @@ namespace Discord
         /// <returns>
         ///     The maximum number of guilds that can be gotten per-batch.
         /// </returns>
-        public const int MaxGuildsPerBatch = 100;
+        public const int MaxGuildsPerBatch = 200;
         /// <summary>
         ///     Returns the max user reactions allowed to be in a request.
         /// </summary>

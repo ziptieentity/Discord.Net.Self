@@ -1,6 +1,4 @@
 using Discord.Rest;
-using Discord.Utils;
-using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -90,14 +88,13 @@ namespace Discord.WebSocket
             }
         }
 
-        internal SocketMessageComponentData(IMessageComponent component, DiscordSocketClient discord, ClientState state, SocketGuild guild, API.User dmUser)
+        internal SocketMessageComponentData(IInteractableComponent component, DiscordSocketClient discord, ClientState state, SocketGuild guild, API.User dmUser)
         {
             CustomId = component.CustomId;
             Type = component.Type;
 
-            Value = component.Type == ComponentType.TextInput
-                ? (component as API.TextInputComponent).Value.Value
-                : null;
+            if (component is API.TextInputComponent textInput)
+                Value = textInput.Value.GetValueOrDefault();
 
             if (component is API.SelectMenuComponent select)
             {
@@ -131,6 +128,11 @@ namespace Discord.WebSocket
                         ? select.Resolved.Value.Roles.Value.Select(role => SocketRole.Create(guild, state, role.Value)).ToImmutableArray()
                         : null;
                 }
+            }
+
+            if (component is API.FileUploadComponent fileUpload)
+            {
+                Values = fileUpload.Values.GetValueOrDefault(null);
             }
         }
     }

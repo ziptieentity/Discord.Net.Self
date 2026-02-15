@@ -53,6 +53,13 @@ namespace Discord.WebSocket
         /// <inheritdoc />
         public override string GlobalName { get { return GlobalUser.GlobalName; } internal set { GlobalUser.GlobalName = value; } }
 
+        /// <inheritdoc />
+        public override string AvatarDecorationHash { get => GlobalUser.AvatarDecorationHash; internal set => GlobalUser.AvatarDecorationHash = value; }
+        /// <inheritdoc />
+        public override ulong? AvatarDecorationSkuId { get => GlobalUser.AvatarDecorationSkuId; internal set => GlobalUser.AvatarDecorationSkuId = value; }
+        /// <inheritdoc />
+        public override PrimaryGuild? PrimaryGuild { get => GlobalUser.PrimaryGuild; internal set => GlobalUser.PrimaryGuild = value; }
+
         /// <inheritdoc/>
         public string GuildBannerHash { get; private set; }
 
@@ -178,7 +185,7 @@ namespace Discord.WebSocket
         {
             base.Update(state, model.User);
             if (model.JoinedAt.IsSpecified)
-                _joinedAtTicks = model.JoinedAt.Value.UtcTicks;
+                _joinedAtTicks = model.JoinedAt.Value.GetValueOrDefault(DateTimeOffset.UtcNow).UtcTicks;
             if (model.Nick.IsSpecified)
                 Nickname = model.Nick.Value;
             if (model.Avatar.IsSpecified)
@@ -234,7 +241,12 @@ namespace Discord.WebSocket
 
         /// <inheritdoc />
         public Task ModifyAsync(Action<GuildUserProperties> func, RequestOptions options = null)
-            => UserHelper.ModifyAsync(this, Discord, func, options);
+        {
+            var args = new GuildUserProperties();
+            func(args);
+            return UserHelper.ModifyAsync(Guild, this, Discord, args, options);
+        }
+
         /// <inheritdoc />
         public Task KickAsync(string reason = null, RequestOptions options = null)
             => UserHelper.KickAsync(this, Discord, reason, options);

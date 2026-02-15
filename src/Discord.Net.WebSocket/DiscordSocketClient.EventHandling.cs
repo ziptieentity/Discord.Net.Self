@@ -1586,14 +1586,7 @@ public partial class DiscordSocketClient
 
                             if (isCached)
                             {
-                                var endpoint = data.Endpoint;
-
-                                //Only strip out the port if the endpoint contains it
-                                var portBegin = endpoint.LastIndexOf(':');
-                                if (portBegin > 0)
-                                    endpoint = endpoint.Substring(0, portBegin);
-
-                                var _ = guild.FinishConnectAudio(endpoint, data.Token).ConfigureAwait(false);
+                                var _ = guild.FinishConnectAudio(data.Endpoint, data.Token).ConfigureAwait(false);
                             }
                             else
                             {
@@ -2506,6 +2499,8 @@ public partial class DiscordSocketClient
                         default:
                             if (!SuppressUnknownDispatchWarnings)
                                 await _gatewayLogger.WarningAsync($"Unknown Dispatch ({type})").ConfigureAwait(false);
+
+                            await TimedInvokeAsync(_unknownDispatchReceived, nameof(UnknownDispatchReceived), type, (payload as JToken));
                             break;
                             #endregion
                     }

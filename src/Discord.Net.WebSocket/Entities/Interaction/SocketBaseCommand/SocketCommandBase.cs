@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using DataModel = Discord.API.ApplicationCommandInteractionData;
 using Model = Discord.API.Interaction;
@@ -35,7 +36,11 @@ namespace Discord.WebSocket
         /// <inheritdoc/>
         public override bool HasResponded { get; internal set; }
 
-        private object _lock = new object();
+#if NET9_0_OR_GREATER
+        private readonly Lock _lock = new();
+#else
+        private readonly object _lock = new();
+#endif
 
         internal SocketCommandBase(DiscordSocketClient client, Model model, ISocketMessageChannel channel, SocketUser user)
             : base(client, model.Id, channel, user)
@@ -77,7 +82,8 @@ namespace Discord.WebSocket
             MessageComponent components = null,
             Embed embed = null,
             RequestOptions options = null,
-            PollProperties poll = null)
+            PollProperties poll = null,
+            MessageFlags flags = MessageFlags.None)
         {
             if (!IsValidToken)
                 throw new InvalidOperationException("Interaction token is no longer valid");
@@ -85,7 +91,7 @@ namespace Discord.WebSocket
             if (!InteractionHelper.CanSendResponse(this) && Discord.ResponseInternalTimeCheck)
                 throw new TimeoutException($"Cannot respond to an interaction after {InteractionHelper.ResponseTimeLimit} seconds!");
 
-            embeds ??= Array.Empty<Embed>();
+            embeds ??= [];
             if (embed != null)
                 embeds = new[] { embed }.Concat(embeds).ToArray();
 
@@ -110,6 +116,13 @@ namespace Discord.WebSocket
                 }
             }
 
+            if (components?.Components?.Any(x => x.Type != ComponentType.ActionRow) ?? false)
+                flags |= MessageFlags.ComponentsV2;
+            if (ephemeral)
+                flags |= MessageFlags.Ephemeral;
+
+            Preconditions.ValidateMessageFlags(flags);
+
             var response = new API.InteractionResponse
             {
                 Type = InteractionResponseType.ChannelMessageWithSource,
@@ -119,8 +132,8 @@ namespace Discord.WebSocket
                     AllowedMentions = allowedMentions?.ToModel() ?? Optional<API.AllowedMentions>.Unspecified,
                     Embeds = embeds.Select(x => x.ToModel()).ToArray(),
                     TTS = isTTS,
-                    Components = components?.Components.Select(x => new API.ActionRowComponent(x)).ToArray() ?? Optional<API.ActionRowComponent[]>.Unspecified,
-                    Flags = ephemeral ? MessageFlags.Ephemeral : Optional<MessageFlags>.Unspecified,
+                    Components = components?.Components.Select(x => x.ToModel()).ToArray() ?? Optional<IMessageComponent[]>.Unspecified,
+                    Flags = flags,
                     Poll = poll?.ToModel() ?? Optional<CreatePollParams>.Unspecified
                 }
             };
@@ -153,7 +166,7 @@ namespace Discord.WebSocket
                 {
                     CustomId = modal.CustomId,
                     Title = modal.Title,
-                    Components = modal.Component.Components.Select(x => new Discord.API.ActionRowComponent(x)).ToArray()
+                    Components = modal.Component.Components.Select(x => x.ToModel()).ToArray()
                 }
             };
 
@@ -183,7 +196,8 @@ namespace Discord.WebSocket
             MessageComponent components = null,
             Embed embed = null,
             RequestOptions options = null,
-            PollProperties poll = null)
+            PollProperties poll = null,
+            MessageFlags flags = MessageFlags.None)
         {
             if (!IsValidToken)
                 throw new InvalidOperationException("Interaction token is no longer valid");
@@ -191,7 +205,7 @@ namespace Discord.WebSocket
             if (!InteractionHelper.CanSendResponse(this) && Discord.ResponseInternalTimeCheck)
                 throw new TimeoutException($"Cannot respond to an interaction after {InteractionHelper.ResponseTimeLimit} seconds!");
 
-            embeds ??= Array.Empty<Embed>();
+            embeds ??= [];
             if (embed != null)
                 embeds = new[] { embed }.Concat(embeds).ToArray();
 
@@ -216,6 +230,13 @@ namespace Discord.WebSocket
                 }
             }
 
+            if (components?.Components?.Any(x => x.Type != ComponentType.ActionRow) ?? false)
+                flags |= MessageFlags.ComponentsV2;
+            if (ephemeral)
+                flags |= MessageFlags.Ephemeral;
+
+            Preconditions.ValidateMessageFlags(flags);
+
             var response = new API.Rest.UploadInteractionFileParams(attachments?.ToArray())
             {
                 Type = InteractionResponseType.ChannelMessageWithSource,
@@ -223,8 +244,8 @@ namespace Discord.WebSocket
                 AllowedMentions = allowedMentions != null ? allowedMentions?.ToModel() : Optional<API.AllowedMentions>.Unspecified,
                 Embeds = embeds.Any() ? embeds.Select(x => x.ToModel()).ToArray() : Optional<API.Embed[]>.Unspecified,
                 IsTTS = isTTS,
-                Flags = ephemeral ? MessageFlags.Ephemeral : Optional<MessageFlags>.Unspecified,
-                MessageComponents = components?.Components.Select(x => new API.ActionRowComponent(x)).ToArray() ?? Optional<API.ActionRowComponent[]>.Unspecified,
+                Flags = flags,
+                MessageComponents = components?.Components.Select(x => x.ToModel()).ToArray() ?? Optional<IMessageComponent[]>.Unspecified,
                 Poll = poll?.ToModel() ?? Optional<CreatePollParams>.Unspecified
             };
 
@@ -250,12 +271,13 @@ namespace Discord.WebSocket
             MessageComponent components = null,
             Embed embed = null,
             RequestOptions options = null,
-            PollProperties poll = null)
+            PollProperties poll = null,
+            MessageFlags flags = MessageFlags.None)
         {
             if (!IsValidToken)
                 throw new InvalidOperationException("Interaction token is no longer valid");
 
-            embeds ??= Array.Empty<Embed>();
+            embeds ??= [];
             if (embed != null)
                 embeds = new[] { embed }.Concat(embeds).ToArray();
 
@@ -264,18 +286,23 @@ namespace Discord.WebSocket
             Preconditions.AtMost(embeds.Length, 10, nameof(embeds), "A max of 10 embeds are allowed.");
             Preconditions.ValidatePoll(poll);
 
+            if (components?.Components?.Any(x => x.Type != ComponentType.ActionRow) ?? false)
+                flags |= MessageFlags.ComponentsV2;
+            if (ephemeral)
+                flags |= MessageFlags.Ephemeral;
+
+            Preconditions.ValidateMessageFlags(flags);
+
             var args = new API.Rest.CreateWebhookMessageParams
             {
                 Content = text ?? Optional<string>.Unspecified,
                 AllowedMentions = allowedMentions?.ToModel() ?? Optional<API.AllowedMentions>.Unspecified,
                 IsTTS = isTTS,
                 Embeds = embeds.Select(x => x.ToModel()).ToArray(),
-                Components = components?.Components.Select(x => new API.ActionRowComponent(x)).ToArray() ?? Optional<API.ActionRowComponent[]>.Unspecified,
-                Poll = poll?.ToModel() ?? Optional<CreatePollParams>.Unspecified
+                Components = components?.Components.Select(x => x.ToModel()).ToArray() ?? Optional<IMessageComponent[]>.Unspecified,
+                Poll = poll?.ToModel() ?? Optional<CreatePollParams>.Unspecified,
+                Flags = flags,
             };
-
-            if (ephemeral)
-                args.Flags = MessageFlags.Ephemeral;
 
             return InteractionHelper.SendFollowupAsync(Discord.Rest, args, Token, Channel, options);
         }
@@ -291,12 +318,13 @@ namespace Discord.WebSocket
             MessageComponent components = null,
             Embed embed = null,
             RequestOptions options = null,
-            PollProperties poll = null)
+            PollProperties poll = null,
+            MessageFlags flags = MessageFlags.None)
         {
             if (!IsValidToken)
                 throw new InvalidOperationException("Interaction token is no longer valid");
 
-            embeds ??= Array.Empty<Embed>();
+            embeds ??= [];
             if (embed != null)
                 embeds = new[] { embed }.Concat(embeds).ToArray();
 
@@ -326,10 +354,12 @@ namespace Discord.WebSocket
                 }
             }
 
-            var flags = MessageFlags.None;
-
+            if (components?.Components?.Any(x => x.Type != ComponentType.ActionRow) ?? false)
+                flags |= MessageFlags.ComponentsV2;
             if (ephemeral)
                 flags |= MessageFlags.Ephemeral;
+
+            Preconditions.ValidateMessageFlags(flags);
 
             var args = new API.Rest.UploadWebhookFileParams(attachments.ToArray())
             {
@@ -338,7 +368,7 @@ namespace Discord.WebSocket
                 IsTTS = isTTS,
                 Embeds = embeds.Any() ? embeds.Select(x => x.ToModel()).ToArray() : Optional<API.Embed[]>.Unspecified,
                 AllowedMentions = allowedMentions?.ToModel() ?? Optional<API.AllowedMentions>.Unspecified,
-                MessageComponents = components?.Components.Select(x => new API.ActionRowComponent(x)).ToArray() ?? Optional<API.ActionRowComponent[]>.Unspecified,
+                MessageComponents = components?.Components.Select(x => x.ToModel()).ToArray() ?? Optional<IMessageComponent[]>.Unspecified,
                 Poll = poll?.ToModel() ?? Optional<CreatePollParams>.Unspecified
             };
             return InteractionHelper.SendFollowupAsync(Discord, args, Token, Channel, options);

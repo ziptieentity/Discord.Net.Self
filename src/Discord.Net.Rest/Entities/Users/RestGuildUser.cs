@@ -109,7 +109,7 @@ namespace Discord.Rest
         {
             base.Update(model.User);
             if (model.JoinedAt.IsSpecified)
-                _joinedAtTicks = model.JoinedAt.Value.UtcTicks;
+                _joinedAtTicks = model.JoinedAt.Value.GetValueOrDefault(DateTimeOffset.UtcNow).UtcTicks;
             if (model.Nick.IsSpecified)
                 Nickname = model.Nick.Value;
             if (model.Avatar.IsSpecified)
@@ -148,7 +148,10 @@ namespace Discord.Rest
         /// <inheritdoc />
         public async Task ModifyAsync(Action<GuildUserProperties> func, RequestOptions options = null)
         {
-            var args = await UserHelper.ModifyAsync(this, Discord, func, options).ConfigureAwait(false);
+            var args = new GuildUserProperties();
+            func(args);
+
+            args = await UserHelper.ModifyAsync(Guild, this, Discord, args, options).ConfigureAwait(false);
             if (args.Deaf.IsSpecified)
                 IsDeafened = args.Deaf.Value;
             if (args.Mute.IsSpecified)

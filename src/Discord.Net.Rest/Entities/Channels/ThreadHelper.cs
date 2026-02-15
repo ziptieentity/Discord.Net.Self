@@ -146,11 +146,13 @@ namespace Discord.Rest
                 Preconditions.AtMost(stickers.Length, 3, nameof(stickers), "A max of 3 stickers are allowed.");
             }
 
-            if (flags is not MessageFlags.None and not MessageFlags.SuppressEmbeds)
-                throw new ArgumentException("The only valid MessageFlags are SuppressEmbeds and none.", nameof(flags));
+            if (components?.Components?.Any(x => x.Type != ComponentType.ActionRow) ?? false)
+                flags |= MessageFlags.ComponentsV2;
+            Preconditions.ValidateMessageFlags(flags);
 
             if (channel.Flags.HasFlag(ChannelFlags.RequireTag))
                 Preconditions.AtLeast(tagIds?.Length ?? 0, 1, nameof(tagIds), $"The channel {channel.Name} requires posts to have at least one tag.");
+
 
             var args = new CreatePostParams()
             {
@@ -163,7 +165,7 @@ namespace Discord.Rest
                     Content = text,
                     Embeds = embeds.Any() ? embeds.Select(x => x.ToModel()).ToArray() : Optional<API.Embed[]>.Unspecified,
                     Flags = flags,
-                    Components = components?.Components?.Any() ?? false ? components.Components.Select(x => new API.ActionRowComponent(x)).ToArray() : Optional<API.ActionRowComponent[]>.Unspecified,
+                    Components = components?.Components?.Any() ?? false ? components.Components.Select(x => x.ToModel()).ToArray() : Optional<IMessageComponent[]>.Unspecified,
                     Stickers = stickers?.Any() ?? false ? stickers.Select(x => x.Id).ToArray() : Optional<ulong[]>.Unspecified,
                 },
                 Tags = tagIds
@@ -224,7 +226,7 @@ namespace Discord.Rest
                 Content = text,
                 Embeds = embeds.Any() ? embeds.Select(x => x.ToModel()).ToArray() : Optional<API.Embed[]>.Unspecified,
                 Flags = flags,
-                MessageComponent = components?.Components?.Any() ?? false ? components.Components.Select(x => new API.ActionRowComponent(x)).ToArray() : Optional<API.ActionRowComponent[]>.Unspecified,
+                MessageComponent = components?.Components?.Any() ?? false ? components.Components.Select(x => x.ToModel()).ToArray() : Optional<IMessageComponent[]>.Unspecified,
                 Slowmode = slowmode,
                 Stickers = stickers?.Any() ?? false ? stickers.Select(x => x.Id).ToArray() : Optional<ulong[]>.Unspecified,
                 Title = title,

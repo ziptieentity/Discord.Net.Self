@@ -1,7 +1,6 @@
 using Discord.API.Voice;
 using Discord.Audio.Streams;
 using Discord.Logging;
-using Discord.Net;
 using Discord.Net.Converters;
 using Discord.WebSocket;
 using Newtonsoft.Json;
@@ -45,7 +44,7 @@ namespace Discord.Audio
         private readonly SemaphoreSlim _stateLock;
         private readonly ConcurrentQueue<long> _heartbeatTimes;
         private readonly ConcurrentQueue<KeyValuePair<ulong, int>> _keepaliveTimes;
-        private readonly ConcurrentDictionary<uint, ulong> _ssrcMap;
+        private readonly SsrcMap _ssrcMap;
         private readonly ConcurrentDictionary<ulong, StreamPair> _streams;
 
         private Task _heartbeatTask, _keepaliveTask;
@@ -54,7 +53,7 @@ namespace Discord.Audio
         private string _url, _sessionId, _token;
         private ulong _userId;
         private uint _ssrc;
-        private bool _isSpeaking;
+        private bool? _isSpeaking;
         private StopReason _stopReason;
         private bool _resuming;
 
@@ -90,7 +89,7 @@ namespace Discord.Audio
             _connection.Disconnected += (exception, _) => _disconnectedEvent.InvokeAsync(exception);
             _heartbeatTimes = new ConcurrentQueue<long>();
             _keepaliveTimes = new ConcurrentQueue<KeyValuePair<ulong, int>>();
-            _ssrcMap = new ConcurrentDictionary<uint, ulong>();
+            _ssrcMap = new SsrcMap();
             _streams = new ConcurrentDictionary<ulong, StreamPair>();
 
             _serializer = new JsonSerializer { ContractResolver = new DiscordContractResolver() };
@@ -146,11 +145,14 @@ namespace Discord.Audio
 
             //Wait for READY
             await _connection.WaitAsync().ConfigureAwait(false);
+            _ssrcMap.UserSpeakingChanged += OnUserSpeakingChanged;
         }
         private async Task OnDisconnectingAsync(Exception ex)
         {
             await _audioLogger.DebugAsync("Disconnecting ApiClient").ConfigureAwait(false);
             await ApiClient.DisconnectAsync().ConfigureAwait(false);
+
+            _ssrcMap.UserSpeakingChanged -= OnUserSpeakingChanged;
 
             if (_stopReason == StopReason.Unknown && ex.InnerException is WebSocketException exception)
             {
@@ -205,6 +207,11 @@ namespace Discord.Audio
 
                 IsFinished = true;
             }
+        }
+
+        private async void OnUserSpeakingChanged(ulong userId, bool isSpeaking)
+        {
+            await _speakingUpdatedEvent.InvokeAsync(userId, isSpeaking);
         }
 
         private async Task ClearHeartBeaters()
@@ -315,7 +322,7 @@ namespace Discord.Audio
                             _ssrc = data.SSRC;
 
                             if (!data.Modes.Contains(DiscordVoiceAPIClient.Mode))
-                                throw new InvalidOperationException($"Discord does not support {DiscordVoiceAPIClient.Mode}");
+                                throw new InvalidOperationException($"Discord does not support {DiscordVoiceAPIClient.Mode}. Available modes: {string.Join(", ", data.Modes)}");
 
                             ApiClient.SetUdpEndpoint(data.Ip, data.Port);
                             await ApiClient.SendDiscoveryAsync(_ssrc).ConfigureAwait(false);
@@ -332,8 +339,7 @@ namespace Discord.Audio
                                 throw new InvalidOperationException($"Discord selected an unexpected mode: {data.Mode}");
 
                             SecretKey = data.SecretKey;
-                            _isSpeaking = false;
-                            await ApiClient.SendSetSpeaking(_isSpeaking).ConfigureAwait(false);
+                            await SetSpeakingAsync(false);
                             _keepaliveTask = RunKeepaliveAsync(_connection.CancelToken);
 
                             _ = _connection.CompleteAsync();
@@ -366,10 +372,13 @@ namespace Discord.Audio
                             await _audioLogger.DebugAsync("Received Speaking").ConfigureAwait(false);
 
                             var data = (payload as JToken).ToObject<SpeakingEvent>(_serializer);
-                            _ssrcMap[data.Ssrc] = data.UserId;
+                            _ssrcMap.AddClient(data.Ssrc, data.UserId, data.Speaking);
 
                             await _speakingUpdatedEvent.InvokeAsync(data.UserId, data.Speaking);
                         }
+                        break;
+                    case VoiceOpCode.ClientConnect:
+                        await _audioLogger.DebugAsync("Received ClientConnect").ConfigureAwait(false);
                         break;
                     case VoiceOpCode.ClientDisconnect:
                         {
@@ -390,6 +399,10 @@ namespace Discord.Audio
 
                             _ = _connection.CompleteAsync();
                         }
+                        break;
+                    // Client flags and platform should be ignored: https://docs.discord.food/topics/voice-connections#client-connections
+                    case VoiceOpCode.ClientFlags:
+                    case VoiceOpCode.ClientPlatform:
                         break;
                     default:
                         await _audioLogger.WarningAsync($"Unknown OpCode ({opCode})").ConfigureAwait(false);
@@ -461,7 +474,7 @@ namespace Discord.Audio
                         {
                             await _audioLogger.DebugAsync("Malformed Frame").ConfigureAwait(false);
                         }
-                        else if (!_ssrcMap.TryGetValue(ssrc, out ulong userId))
+                        else if (!_ssrcMap.TryUpdateUser(ssrc, out ulong userId))
                         {
                             await _audioLogger.DebugAsync($"Unknown SSRC {ssrc}").ConfigureAwait(false);
                         }
@@ -513,7 +526,9 @@ namespace Discord.Audio
                     _heartbeatTimes.Enqueue(now);
                     try
                     {
-                        await ApiClient.SendHeartbeatAsync().ConfigureAwait(false);
+                        // TODO: The last sequence number received should be sent.
+                        // https://discord.com/developers/docs/topics/voice-connections#buffered-resume
+                        await ApiClient.SendHeartbeatAsync(-1).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -573,7 +588,7 @@ namespace Discord.Audio
             if (_isSpeaking != value)
             {
                 _isSpeaking = value;
-                await ApiClient.SendSetSpeaking(value).ConfigureAwait(false);
+                await ApiClient.SendSetSpeaking(value, _ssrc).ConfigureAwait(false);
             }
         }
 

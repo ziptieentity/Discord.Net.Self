@@ -97,7 +97,8 @@ namespace Discord
             AssertFlag(() => new ChannelPermissions(setVoiceChannelStatus: true), ChannelPermission.SetVoiceChannelStatus);
             AssertFlag(() => new ChannelPermissions(sendPolls: true), ChannelPermission.SendPolls);
             AssertFlag(() => new ChannelPermissions(useExternalApps: true), ChannelPermission.UseExternalApps);
-            AssertFlag(() => new ChannelPermissions(useExternalSounds: true), ChannelPermission.UseExternalSounds);
+            AssertFlag(() => new ChannelPermissions(pinMessages: true), ChannelPermission.PinMessages);
+            AssertFlag(() => new ChannelPermissions(bypassSlowmode: true), ChannelPermission.BypassSlowmode);
         }
 
         /// <summary>
@@ -168,6 +169,8 @@ namespace Discord
             AssertUtil(ChannelPermission.SendPolls, x => x.SendPolls, (p, enable) => p.Modify(sendPolls: enable));
             AssertUtil(ChannelPermission.UseExternalApps, x => x.UserExternalApps, (p, enable) => p.Modify(useExternalApps: enable));
             AssertUtil(ChannelPermission.UseExternalSounds, x => x.UseExternalSounds, (p, enable) => p.Modify(useExternalSounds: enable));
+            AssertUtil(ChannelPermission.PinMessages, x => x.PinMessages, (p, enable) => p.Modify(pinMessages: enable));
+            AssertUtil(ChannelPermission.BypassSlowmode, x => x.BypassSlowmode, (p, enable) => p.Modify(bypassSlowmode: enable));
         }
 
         /// <summary>

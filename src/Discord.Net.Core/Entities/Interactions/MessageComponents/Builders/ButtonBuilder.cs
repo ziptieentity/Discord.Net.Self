@@ -7,8 +7,11 @@ namespace Discord;
 /// <summary>
 ///     Represents a class used to build <see cref="ButtonComponent"/>'s.
 /// </summary>
-public class ButtonBuilder
+public class ButtonBuilder : IInteractableComponentBuilder
 {
+    /// <inheritdoc />
+    public ComponentType Type => ComponentType.Button;
+
     /// <summary>
     ///     The max length of a <see cref="ButtonComponent.Label"/>.
     /// </summary>
@@ -24,8 +27,12 @@ public class ButtonBuilder
         get => _label;
         set
         {
-            Preconditions.AtLeast(value.Length, 1, nameof(Label));
-            Preconditions.AtMost(value.Length, MaxButtonLabelLength, nameof(Label));
+            if (value is not null)
+            {
+                Preconditions.AtLeast(value.Length, 1, nameof(Label));
+                Preconditions.AtMost(value.Length, MaxButtonLabelLength, nameof(Label));
+            }
+
             _label = value;
         }
     }
@@ -40,8 +47,12 @@ public class ButtonBuilder
         get => _customId;
         set
         {
-            Preconditions.AtLeast(value.Length, 1, nameof(CustomId));
-            Preconditions.AtMost(value.Length, ComponentBuilder.MaxCustomIdLength, nameof(CustomId));
+            if (value is not null)
+            {
+                Preconditions.AtLeast(value.Length, 1, nameof(CustomId));
+                Preconditions.AtMost(value.Length, ComponentBuilder.MaxCustomIdLength, nameof(CustomId));
+            }
+
             _customId = value;
         }
     }
@@ -74,6 +85,8 @@ public class ButtonBuilder
     /// </remarks>
     public ulong? SkuId { get; set; }
 
+    public int? Id { get; set; }
+
     private string _label;
     private string _customId;
 
@@ -92,7 +105,7 @@ public class ButtonBuilder
     /// <param name="emote">The emote of this button.</param>
     /// <param name="isDisabled">Disabled this button or not.</param>
     /// <param name="skuId">The sku id of this button.</param>
-    public ButtonBuilder(string label = null, string customId = null, ButtonStyle style = ButtonStyle.Primary, string url = null, IEmote emote = null, bool isDisabled = false, ulong? skuId = null)
+    public ButtonBuilder(string label = null, string customId = null, ButtonStyle style = ButtonStyle.Primary, string url = null, IEmote emote = null, bool isDisabled = false, ulong? skuId = null, int? id = null)
     {
         CustomId = customId;
         Style = style;
@@ -101,6 +114,7 @@ public class ButtonBuilder
         IsDisabled = isDisabled;
         Emote = emote;
         SkuId = skuId;
+        Id = id;
     }
 
     /// <summary>
@@ -115,6 +129,7 @@ public class ButtonBuilder
         IsDisabled = button.IsDisabled;
         Emote = button.Emote;
         SkuId = button.SkuId;
+        Id = button.Id;
     }
 
     /// <summary>
@@ -315,6 +330,8 @@ public class ButtonBuilder
             break;
         }
 
-        return new ButtonComponent(Style, Label, Emote, CustomId, Url, IsDisabled, SkuId);
+        return new ButtonComponent(Style, Label, Emote, CustomId, Url, IsDisabled, SkuId, Id);
     }
+
+    IMessageComponent IMessageComponentBuilder.Build() => Build();
 }

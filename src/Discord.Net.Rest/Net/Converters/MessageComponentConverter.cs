@@ -6,7 +6,7 @@ namespace Discord.Net.Converters
 {
     internal class MessageComponentConverter : JsonConverter
     {
-        public static MessageComponentConverter Instance => new MessageComponentConverter();
+        public static MessageComponentConverter Instance => new ();
 
         public override bool CanRead => true;
         public override bool CanWrite => false;
@@ -20,8 +20,10 @@ namespace Discord.Net.Converters
         public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
         {
             var jsonObject = JObject.Load(reader);
-            var messageComponent = default(IMessageComponent);
-            switch ((ComponentType)jsonObject["type"].Value<int>())
+            var typeProperty = jsonObject["type"].Value<int>();
+
+            IMessageComponent messageComponent;
+            switch ((ComponentType)typeProperty)
             {
                 case ComponentType.ActionRow:
                     messageComponent = new API.ActionRowComponent();
@@ -34,10 +36,40 @@ namespace Discord.Net.Converters
                 case ComponentType.MentionableSelect:
                 case ComponentType.RoleSelect:
                 case ComponentType.UserSelect:
-                    messageComponent = new API.SelectMenuComponent();
+                    messageComponent = new API.SelectMenuComponent(){Type = (ComponentType)typeProperty};
                     break;
                 case ComponentType.TextInput:
                     messageComponent = new API.TextInputComponent();
+                    break;
+                case ComponentType.TextDisplay:
+                    messageComponent = new API.TextDisplayComponent();
+                    break;
+                case ComponentType.Thumbnail:
+                    messageComponent = new API.ThumbnailComponent();
+                    break;
+                case ComponentType.Section:
+                    messageComponent = new API.SectionComponent();
+                    break;
+                case ComponentType.MediaGallery:
+                    messageComponent = new API.MediaGalleryComponent();
+                    break;
+                case ComponentType.Separator:
+                    messageComponent = new API.SeparatorComponent();
+                    break;
+                case ComponentType.File:
+                    messageComponent = new API.FileComponent();
+                    break;
+                case ComponentType.Container:
+                    messageComponent = new API.ContainerComponent();
+                    break;
+                case ComponentType.Label:
+                    messageComponent = new API.LabelComponent();
+                    break;
+                case ComponentType.FileUpload:
+                    messageComponent = new API.FileUploadComponent();
+                    break;
+                default:
+                    messageComponent = new API.UnknownComponent { RawType = typeProperty, RawJson = jsonObject.ToString() };
                     break;
             }
             serializer.Populate(jsonObject.CreateReader(), messageComponent);
