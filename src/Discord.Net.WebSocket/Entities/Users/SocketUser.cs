@@ -1,3 +1,4 @@
+using Discord.API;
 using Discord.Rest;
 using System;
 using System.Collections.Generic;
@@ -65,6 +66,15 @@ namespace Discord.WebSocket
         /// </remarks>
         public IReadOnlyCollection<SocketGuild> MutualGuilds
             => Discord.Guilds.Where(g => g.GetUser(Id) != null).ToImmutableArray();
+
+        /// <summary>
+        /// Asynchronously retrieves the profile information for the current user from the Discord API.
+        /// </summary>
+        /// <remarks>Ensure that the API client is properly authenticated before calling this method. The
+        /// returned profile includes user-specific details as provided by the Discord API.</remarks>
+        /// <returns>A task that represents the asynchronous operation. The task result contains a <see cref="UserProfile"/>
+        /// object with the user's profile information.</returns>
+        public async Task<UserProfile> GetUserProfileAsync() => await Discord.ApiClient.GetUserProfileAsync(Id);
 
         internal SocketUser(DiscordSocketClient discord, ulong id)
             : base(discord, id)
@@ -173,6 +183,8 @@ namespace Discord.WebSocket
             => AvatarDecorationHash is not null
                 ? CDN.GetAvatarDecorationUrl(AvatarDecorationHash)
                 : null;
+
+
 
         /// <summary>
         ///     Gets the full name of the user (e.g. Example#0001).

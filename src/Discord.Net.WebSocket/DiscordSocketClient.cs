@@ -827,12 +827,12 @@ namespace Discord.WebSocket
             if (status == null && !activity.IsSpecified)
                 return null;
 
-            GameModel game = null;
+            API.Game game = null;
             //Discord only accepts rich presence over RPC, don't even bother building a payload
 
             if (activity.GetValueOrDefault() != null)
             {
-                var gameModel = new GameModel();
+                var gameModel = new API.Game();
                 if (activity.Value is RichGame)
                     throw new NotSupportedException("Outgoing Rich Presences are not supported via WebSocket.");
                 gameModel.Name = Activity.Name;

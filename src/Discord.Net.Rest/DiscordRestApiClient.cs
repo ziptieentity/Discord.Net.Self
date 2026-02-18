@@ -3,7 +3,7 @@ using Discord.Net;
 using Discord.Net.Converters;
 using Discord.Net.Queue;
 using Discord.Net.Rest;
-
+using Discord.Rest;
 using Newtonsoft.Json;
 
 using System;
@@ -18,6 +18,8 @@ using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Net;
+using System.Net.Http;
+using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
@@ -2392,6 +2394,30 @@ namespace Discord.API
                 return await SendAsync<User>("GET", () => $"users/{userId}", new BucketIds(), options: options).ConfigureAwait(false);
             }
             catch (HttpException ex) when (ex.HttpCode == HttpStatusCode.NotFound) { return null; }
+        }
+        public async Task<UserProfile> GetUserProfileAsync(ulong userId, RequestOptions options = null)
+        {
+            if(this.AuthTokenType != TokenType.User)
+                throw new InvalidOperationException("User profiles are only available when using a User token.");
+
+            Preconditions.NotEqual(userId, 0, nameof(userId));
+            options = RequestOptions.CreateOrClone(options);
+
+            try
+            {
+                using var httpClient = new HttpClient();
+                httpClient.DefaultRequestHeaders.Add("Authorization", AuthToken);
+                var response = await httpClient.GetAsync($"https://discord.com/api/v10/users/{userId}/profile");
+                var stringData = await response.Content.ReadAsStringAsync();
+                var model = JsonConvert.DeserializeObject<ProfileModel>(stringData);
+                return new UserProfile(model);
+            }
+            catch (HttpException ex) when (ex.HttpCode == HttpStatusCode.NotFound) { return null; }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.ToString());
+                return null;
+            }
         }
         #endregion
 
